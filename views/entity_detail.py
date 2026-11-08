@@ -70,6 +70,8 @@ def render_entity_detail_view(name: str):
     # SOL SÜTUN: İçerik / Düzenleme ve Modüler Alt Bileşenler
     with left:
         if st.toggle("✏️ Düzenle", key=f"edit_{entity.id}"):
+            newname = st.text_area("İsim",value=entity.name or "", height=20)
+            newaliaes = st.text_area("Takma Adlar",value=entity.aliases or "", height=20)
             newText = st.text_area("İçerik", value=entity.content_md or "", height=300)
 
             st.markdown("##### 🖼️ Görsel Ayarları")
@@ -83,7 +85,10 @@ def render_entity_detail_view(name: str):
                 remove_img = st.checkbox("Mevcut resmi kaldır", key=f"rm_{entity.id}")
 
             if st.button("💾 Kaydet"):
+                WorldManager.updateEntity(entity.id, name=newname, aliases=newaliaes)
+                WorldManager.updateEntity(entity.id, )
                 BacklinkManager.saveContent(entity.id, newText)
+                st.query_params["page"] = newname
                 if new_img:
                     saved_path = saveUploadedImage(new_img)
                     WorldManager.updateEntity(entity.id, image_path=saved_path)
