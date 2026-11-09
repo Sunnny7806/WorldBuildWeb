@@ -35,14 +35,15 @@ def goTo(name: str):
     st.query_params["page"] = name
 
 
-def renderLinks(text: str, existingNames: set) -> str:
+def renderLinks(text: str, aliases_map: set) -> str:
     """[Viladimir] veya [Viladimir|Varis] metinlerini tıklanabilir bağlantılara çevirir."""
     def replace(match):
         target = match.group(1).strip()
         label = match.group(2) or target
-        if target in existingNames:
-            return f'<a href="?page={quote(target)}" target="_self">{label}</a>'
-        return f'<span style="color:#e05555">{label}</span>'
+        asil_isim = aliases_map.get(target.lower())
+        if asil_isim:
+            return f'<a href="?page={quote(asil_isim.name)}" target="_self">{label}</a>'
+        return label
     return LINK_RE.sub(replace, text)
 
 

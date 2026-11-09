@@ -1,9 +1,10 @@
 import os
 import streamlit as st
 from worldManager import WorldManager
-from backlinks import BacklinkManager
+from backlinks import BacklinkManager, WikiLinker
 from utils.constants import TYPE_ICONS, goTo, renderLinks, getDetails
 from utils.media import saveUploadedImage
+
 
 # Modüler alt bileşenler
 from components.character_sheet import render_character_sheet
@@ -86,7 +87,6 @@ def render_entity_detail_view(name: str):
 
             if st.button("💾 Kaydet"):
                 WorldManager.updateEntity(entity.id, name=newname, aliases=newaliaes)
-                WorldManager.updateEntity(entity.id, )
                 BacklinkManager.saveContent(entity.id, newText)
                 st.query_params["page"] = newname
                 if new_img:
@@ -96,9 +96,9 @@ def render_entity_detail_view(name: str):
                     WorldManager.updateEntity(entity.id, image_path="")
                 st.rerun()
         else:
-            names = {e.name for e in WorldManager.get_all_entities()}
+            aliases = WikiLinker.buildAliasMap()
             content = entity.content_md or "_Bu sayfa henüz boş._"
-            st.markdown(renderLinks(content, names), unsafe_allow_html=True)
+            st.markdown(renderLinks(content, aliases), unsafe_allow_html=True)
 
         # 👥 Lonca (Faction) Özel Görünümü & Kadro Jeneratörü
         if entity.faction:
