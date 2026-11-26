@@ -4,24 +4,22 @@ import random
 import uuid
 import streamlit as st
 from worldManager import WorldManager
-from utils.constants import goTo
+from utils.constants import goTo,is_dm_mode
 from utils.monsters_srd import get_srd_monsters
 from utils.dice import get_modifier, roll_d20, roll_dice
 
 
 def _init_encounter_state():
-    """Karşılaşma oturumunu başlatır veya mevcut olanı döner."""
-    if "active_encounter" not in st.session_state:
-        st.session_state["active_encounter"] = {
-            "is_active": False,
-            "round": 1,
-            "turn_idx": 0,
-            "combatants": []
-        }
-    return st.session_state["active_encounter"]
+    return WorldManager.get_encounter()
 
+def save_and_rerun(enc):
+    WorldManager.save_encounter(enc)
+    st.rerun()
 
 def render_dm_screen():
+    if not is_dm_mode():
+        st.error("DM ine danışmanı tavsiye ederim")
+        return 
     """DM Masası: Canlı Karşılaşma Takipçisi ve Canavar Ansiklopedisi (Bestiary)."""
     st.title("⚔️ DM Masası — Karşılaşma & Canavar Yönetimi")
     st.caption("Oyun anında inisiyatif sırasını yönetin, canavarları sahneye sürün ve anlık can takibi yapın.")
@@ -48,12 +46,12 @@ def render_dm_screen():
                 encounter["turn_idx"] = (encounter["turn_idx"] + 1) % len(combatants)
                 if encounter["turn_idx"] == 0:
                     encounter["round"] += 1
-                st.rerun()
+                save_and_rerun(encounter)
 
         if top_c3.button("🔄 İnisiyatife Göre Diz", use_container_width=True, disabled=len(combatants) == 0):
             combatants.sort(key=lambda x: x["init"], reverse=True)
             encounter["turn_idx"] = 0
-            st.rerun()
+            save_and_rerun(encounter)
 
         if top_c4.button("🏁 Karşılaşmayı Bitir", use_container_width=True, disabled=len(combatants) == 0):
             encounter["is_active"] = False
@@ -62,7 +60,7 @@ def render_dm_screen():
             encounter["combatants"] = []
             st.session_state.pop("dm_roll_result", None)
             st.success("Karşılaşma sonlandırıldı ve sahne temizlendi.")
-            st.rerun()
+            save_and_rerun(encounter)
 
         # Son Zar Bildirimi
         last_roll = st.session_state.get("dm_roll_result")
@@ -107,7 +105,7 @@ def render_dm_screen():
                             "traits": getattr(c_stat, "spells_and_features", "")
                         })
                         encounter["is_active"] = True
-                        st.rerun()
+                        save_and_rerun(encounter)
                 else:
                     st.caption("Eklenebilecek uygun oyuncu bulunamadı.")
 
@@ -156,7 +154,7 @@ def render_dm_screen():
                                 "traits": getattr(m_stat, "traits", "")
                             })
                         encounter["is_active"] = True
-                        st.rerun()
+                        save_and_rerun(encounter)
                 else:
                     st.caption("Kayıtlı canavar yok. Yan sekmeden hazır canavarları yükleyebilir veya yenisini oluşturabilirsiniz.")
 
@@ -201,7 +199,8 @@ def render_dm_screen():
                         )
                         if new_init != c["init"]:
                             c["init"] = int(new_init)
-
+                            save_and_rerun(encounter)
+                            save_and_rerun(encounter)
                     # Can (HP) ve Hasar Butonları
                     with row4:
                         hp_ratio = max(0.0, min(1.0, c["hp_cur"] / max(1, c["hp_max"])))
@@ -210,16 +209,16 @@ def render_dm_screen():
                         b1, b2, b3, b4 = st.columns(4)
                         if b1.button("-5", key=f"dmg5_{c['id']}", disabled=is_dead):
                             c["hp_cur"] = max(0, c["hp_cur"] - 5)
-                            st.rerun()
+                            save_and_rerun(encounter)
                         if b2.button("-1", key=f"dmg1_{c['id']}", disabled=is_dead):
                             c["hp_cur"] = max(0, c["hp_cur"] - 1)
-                            st.rerun()
+                            save_and_rerun(encounter)
                         if b3.button("+1", key=f"heal1_{c['id']}"):
                             c["hp_cur"] = min(c["hp_max"], c["hp_cur"] + 1)
-                            st.rerun()
+                            save_and_rerun(encounter)
                         if b4.button("+5", key=f"heal5_{c['id']}"):
                             c["hp_cur"] = min(c["hp_max"], c["hp_cur"] + 5)
-                            st.rerun()
+                            save_and_rerun(encounter)
 
                     # Çıkar Butonu
                     with row5:
@@ -227,7 +226,7 @@ def render_dm_screen():
                             combatants.pop(idx)
                             if encounter["turn_idx"] >= len(combatants) and len(combatants) > 0:
                                 encounter["turn_idx"] = 0
-                            st.rerun()
+                            save_and_rerun(encounter)
 
                     # Canavar Saldırıları & Zarları (Genişletilebilir Alan)
                     if c.get("actions"):
@@ -315,7 +314,7 @@ def render_dm_screen():
                                 stats_json=stats_j, actions_json=actions_j, traits=m_traits
                             )
                             st.success(f"{m_name} başarıyla Bestiary'ye eklendi!")
-                            st.rerun()
+                            save_and_rerun(encounter)
 
         with b_c2:
             with st.expander("📦 Klasik SRD Canavarlarını Yükle"):
@@ -328,7 +327,7 @@ def render_dm_screen():
                         if res:
                             added_count += 1
                     st.success(f"Canavarlar kontrol edildi / eklendi! ({len(srd_list)} şablon hazır)")
-                    st.rerun()
+                    save_and_rerun(encounter)
 
         st.divider()
 
@@ -393,7 +392,7 @@ def render_dm_screen():
                             })
                             encounter["is_active"] = True
                             st.success(f"{mob.name} sahneye sürüldü! (İnisiyatif zarı atıldı)")
-                            st.rerun()
+                            save_and_rerun(encounter)
 
                     with c4:
                         st.button("📖 Sayfasını Aç", key=f"open_mob_{mob.id}", on_click=goTo, args=(mob.name,), use_container_width=True)

@@ -2,7 +2,9 @@ import json
 import random
 import uuid
 import streamlit as st
+from worldManager import WorldManager
 from utils.dice import get_modifier, format_modifier
+from utils.constants import is_dm_mode,is_visible
 
 def render_monster_stat_block(entity):
     """Canavar (Monster) Stat Bloğunu ve DM Encounter'a sahneleme butonunu render eder."""
@@ -21,9 +23,7 @@ def render_monster_stat_block(entity):
 
     with mb4:
         if st.button("⚔️ Sahneye Sür (DM Karşılaşmasına Ekle)", type="primary", use_container_width=True, key=f"stage_from_page_{entity.id}"):
-            if "active_encounter" not in st.session_state:
-                st.session_state["active_encounter"] = {"is_active": True, "round": 1, "turn_idx": 0, "combatants": []}
-            enc = st.session_state["active_encounter"]
+            enc = WorldManager.get_encounter()
 
             dex_mod = 0
             try:
@@ -53,6 +53,7 @@ def render_monster_stat_block(entity):
                 "traits": m.traits
             })
             enc["is_active"] = True
+            WorldManager.save_encounter(enc)
             st.query_params["page"] = "__dm_screen__"
             st.rerun()
 

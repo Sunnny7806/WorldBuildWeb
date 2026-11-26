@@ -1,6 +1,6 @@
-from database import SessionLocal, get_db, Entity, Character, Item, Location, EntityLink, God, District, MapPin, Faction, Monster, Lore
+from database import SessionLocal, get_db, Entity, Character, Item, Location, EntityLink, God, District, MapPin, Faction, Monster, Lore, EncounterState
 from sqlalchemy.orm import joinedload
-
+import json
 # Tüm alt tabloları tek seferde yüklemek için merkezi ilişki listesi:
 ENTITY_LOAD_OPTIONS = [
     joinedload(Entity.character),
@@ -167,9 +167,12 @@ class WorldManager:
     # ==========================================
 
     @staticmethod
-    def get_all_entities():
+    def get_all_entities(include_secret: bool = True):
         with get_db() as db:
-            return db.query(Entity).options(*ENTITY_LOAD_OPTIONS).all()
+            query =  db.query(Entity).options(*ENTITY_LOAD_OPTIONS)
+            if not include_secret: 
+                query = query.filter(Entity.is_secret.is_not(True))
+            return query.all()
 
     @staticmethod
     def getEntityByName(name: str):
@@ -284,12 +287,13 @@ class WorldManager:
 
 
     @staticmethod
-    def search(keyword: str):
+    def search(keyword: str, include_secret: bool = True):
         with get_db() as db:
             pattern = f"%{keyword}%"
-            return db.query(Entity).filter(
-                (Entity.name.ilike(pattern)) | (Entity.aliases.ilike(pattern))
-            ).all()
+            query = db.query(Entity).options(*ENTITY_LOAD_OPTIONS).filter((Entity.name.ilike(pattern)) | (Entity.aliases.ilike(pattern)))
+            if not include_secret:
+                query = query.filter(Entity.is_secret.is_not(True))
+            return query.all()
 
     # ==========================================
     # 3. GÜNCELLEME VE SİLME (UPDATE / DELETE)
@@ -361,9 +365,11 @@ class WorldManager:
             return pin
 
     @staticmethod
-    def get_map_pins(map_type: str, location_id: str = None):
+    def get_map_pins(map_type: str, location_id: str = None, include_secret: bool = True):
         with get_db() as db:
             query = db.query(MapPin, Entity).join(Entity, Entity.id == MapPin.target_entity_id)
+            if not include_secret:
+                query = query.filter(Entity.is_secret.is_not(True))
             if map_type == "world":
                 query = query.filter(MapPin.map_type == "world")
             else:
@@ -378,3 +384,32 @@ class WorldManager:
                 db.delete(pin)
                 return True
             return False
+
+    @staticmethod
+    def get_encounter():
+        with get_db() as db:
+            encounter = db.query(EncounterState).filter(EncounterState.id == 1).first()
+            if not encounter:
+                combat_dict = {"is_active": False, "round": 1, "turn_idx": 0, "combatants": [], "last_roll": ""}
+                return combat_dict
+            combat = json.loads(encounter.combatants_json or "[]")
+            combat_dict = {"is_active": encounter.is_active, "round": encounter.round_num, "turn_idx": encounter.turn_idx, "combatants": combat, "last_roll": encounter.last_roll or ""}
+            return combat_dict
+
+    @staticmethod
+    def save_encounter(enc_dict:dict):
+        with get_db() as db:
+            row = db.query(EncounterState).filter(EncounterState.id == 1).first()
+            if not row:
+                row = EncounterState(id = 1)
+                db.add(row)
+            row.is_active = enc_dict.get("is_active", False)
+            row.round_num = enc_dict.get("round", 1)
+            row.turn_idx = enc_dict.get("turn_idx",0)
+            row.last_roll = str(enc_dict.get("last_roll",""))
+            row.combatants_json = json.dumps(enc_dict.get("combatants", []))
+            db.flush()
+            return row   
+
+
+        

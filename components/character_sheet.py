@@ -2,7 +2,7 @@ import json
 import random
 import streamlit as st
 from worldManager import WorldManager
-from utils.constants import goTo
+from utils.constants import goTo, is_dm_mode, is_visible,is_visible
 from utils.dice import get_modifier, format_modifier, roll_d20
 
 def render_character_sheet(entity):
@@ -129,7 +129,7 @@ def render_character_sheet(entity):
 
     with tab_inv:
         st.subheader("🎒 Envanter (Taşıdığı Eşyalar)")
-        inventory = WorldManager.get_character_inventory(entity.id)
+        inventory = [i for i in WorldManager.get_character_inventory(entity.id) if is_visible(i)]
         if inventory:
             for item in inventory:
                 st.button(f"💎 {item.name}", key=f"inv_{item.id}", on_click=goTo, args=(item.name,))
@@ -137,20 +137,21 @@ def render_character_sheet(entity):
             st.caption("Bu karakterin üzerinde kayıtlı bir eşya yok.")
 
         # Karakterin Çantasına Hızlı Eşya Koyma
-        with st.expander("➕ Çantaya Eşya Ekle / Devret"):
-            all_items = [e for e in WorldManager.get_all_entities() if e.entity_type == "item"]
-            available_items = [it for it in all_items if not it.item or it.item.owner_id != entity.id]
-            if available_items:
-                c_it1, c_it2 = st.columns([3, 1], vertical_alignment="bottom")
-                chosen_item = c_it1.selectbox(
-                    "Eşya Seç:", 
-                    options=available_items, 
-                    format_func=lambda x: x.name, 
-                    key=f"give_item_{entity.id}"
-                )
-                if c_it2.button("🎒 Çantaya Ver", key=f"btn_give_{entity.id}", use_container_width=True):
-                    WorldManager.updateEntity(chosen_item.id, owner_id=entity.id, location_id=None)
-                    st.success(f"{chosen_item.name} çantaya eklendi!")
-                    st.rerun()
-            else:
-                st.caption("Verilebilecek başka eşya bulunmuyor.")
+        if is_dm_mode():    
+            with st.expander("➕ Çantaya Eşya Ekle / Devret"):
+                all_items = [e for e in WorldManager.get_all_entities() if e.entity_type == "item"]
+                available_items = [it for it in all_items if not it.item or it.item.owner_id != entity.id]
+                if available_items:
+                    c_it1, c_it2 = st.columns([3, 1], vertical_alignment="bottom")
+                    chosen_item = c_it1.selectbox(
+                        "Eşya Seç:", 
+                        options=available_items, 
+                        format_func=lambda x: x.name, 
+                        key=f"give_item_{entity.id}"
+                    )
+                    if c_it2.button("🎒 Çantaya Ver", key=f"btn_give_{entity.id}", use_container_width=True):
+                        WorldManager.updateEntity(chosen_item.id, owner_id=entity.id, location_id=None)
+                        st.success(f"{chosen_item.name} çantaya eklendi!")
+                        st.rerun()
+                else:
+                    st.caption("Verilebilecek başka eşya bulunmuyor.")

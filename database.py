@@ -38,6 +38,8 @@ def _run_migrations(engine):
             "ALTER TABLE characters ADD COLUMN speed VARCHAR DEFAULT '30 ft'",
             "ALTER TABLE characters ADD COLUMN stats_json VARCHAR DEFAULT ''",
             "ALTER TABLE characters ADD COLUMN spells_and_features TEXT DEFAULT ''",
+            "ALTER TABLE entities ADD COLUMN secret_notes TEXT DEFAULT ''",
+            "ALTER TABLE entities ADD COLUMN is_secret BOOLEAN DEFAULT 0"
         ]
         for query in migrations:
             try:
@@ -98,6 +100,8 @@ class Entity(Base):
     entity_type = Column(String, nullable=False) # 'character', 'item', 'location' vb.
     content_md = Column(String, default="")
     image_path = Column(String, default="")
+    secret_notes = Column(String, default="")
+    is_secret = Column(Boolean,default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     character = relationship("Character", foreign_keys="Character.entity_id", back_populates="entity", uselist=False, cascade="all, delete-orphan")
@@ -227,3 +231,13 @@ class MapPin(Base):
     x = Column(Float, nullable=False)  # Yüzde cinsinden X konumu (0 - 100)
     y = Column(Float, nullable=False)  # Yüzde cinsinden Y konumu (0 - 100)
     label = Column(String, default="") # Pin üzerinde görünecek isim
+
+class EncounterState(Base):
+    __tablename__ = "encounter_state"
+
+    id = Column(Integer, primary_key=True, default=1)
+    is_active = Column(Boolean,default=False)
+    round_num = Column(Integer, default=1)
+    turn_idx = Column(Integer, default=0)
+    combatants_json = Column(String, default="[]")
+    last_roll = Column(String, default="")

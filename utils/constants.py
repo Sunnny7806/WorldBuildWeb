@@ -30,6 +30,14 @@ TYPE_ICONS = {
     "lore": "📖"
 }
 
+DM_PIN = "1234"
+def is_dm_mode() -> bool:
+    return st.session_state.get("is_dm",False)
+def is_visible(entity) -> bool:
+        if is_dm_mode(): return True 
+        if not is_dm_mode() and (getattr(entity, "is_secret", False) or entity.entity_type == "monster"):
+            return False
+        return True
 
 def goTo(name: str):
     """Belirtilen entity adına sahip sayfaya yönlendirir."""
@@ -66,7 +74,7 @@ def getDetails(entity) -> dict:
         if c.faction_id:
             from worldManager import WorldManager
             f_ent = WorldManager.getEntityById(c.faction_id)
-            if f_ent:
+            if f_ent and is_visible(f_ent):
                 details["Bağlı Olduğu Lonca"] = f"{f_ent.name} ({c.faction_role})" if c.faction_role else f_ent.name
         return details
     
@@ -76,12 +84,12 @@ def getDetails(entity) -> dict:
         if i.owner_id:
             from worldManager import WorldManager
             owner = WorldManager.getEntityById(i.owner_id)
-            if owner:
+            if owner and is_visible(owner):
                 details["Sahibi"] = owner.name
         if i.location_id:
             from worldManager import WorldManager
             loc = WorldManager.getEntityById(i.location_id)
-            if loc:
+            if loc and is_visible(loc):
                 details["Bulunduğu Yer"] = loc.name
         return details
     
@@ -99,7 +107,7 @@ def getDetails(entity) -> dict:
         if d.parent_location_id:
             from worldManager import WorldManager
             parent = WorldManager.getEntityById(d.parent_location_id)
-            if parent:
+            if parent and is_visible(parent):
                 details["Bağlı Olduğu Şehir"] = parent.name
         return details
     

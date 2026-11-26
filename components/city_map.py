@@ -2,9 +2,11 @@ import os
 import streamlit as st
 from worldManager import WorldManager
 from utils.media import saveUploadedImage
+from utils.constants import is_dm_mode
 from components.map import interactiveMap
 
 def render_city_map(entity):
+    dm_mode = is_dm_mode()
     """Şehir (Location) için interaktif harita, pin tıklama mekanizması ve harita ayarlarını render eder."""
     if not entity.location:
         return
@@ -17,15 +19,15 @@ def render_city_map(entity):
     cityPendingKey = f"{cityMapKey}_pending"
 
     if city_map_path and os.path.exists(city_map_path):
-        city_pins = WorldManager.get_map_pins(map_type="location", location_id=entity.id)
+        city_pins = WorldManager.get_map_pins(map_type="location", location_id=entity.id,include_secret=is_dm_mode())
         interactiveMap(city_map_path, city_pins, key=cityMapKey)
-        st.caption("💡 İpucu: Şehir haritası üzerinde bir yere **tıklayarak** doğrudan o konuma mekan pini yerleştirebilirsiniz.")
+        if dm_mode: st.caption("💡 İpucu: Şehir haritası üzerinde bir yere **tıklayarak** doğrudan o konuma mekan pini yerleştirebilirsiniz.")
     else:
         st.caption("Bu şehrin henüz bir haritası yüklenmemiş. Aşağıdaki menüden yükleyebilirsiniz.")
 
     # Şehir Haritasında Bir Nokta Seçildiyse:
     city_preview = st.session_state.get(cityPendingKey)
-    if city_preview:
+    if is_dm_mode() and city_preview:
         clicked_x, clicked_y = city_preview
         with st.container():
             st.success(f"🎯 Haritada bir nokta seçtiniz! (X: %{clicked_x}, Y: %{clicked_y})")
@@ -94,24 +96,25 @@ def render_city_map(entity):
                     st.rerun()
 
     # Şehir Haritası Yükleme / Pin Yönetimi Paneli
-    with st.expander("⚙️ Şehir Haritası Görselini Değiştir / Pinleri Yönet"):
-        t1, t2 = st.tabs(["🖼️ Şehir Haritası Görseli", "🗑️ Pinleri Sil"])
-        with t1:
-            city_map_upload = st.file_uploader("Bu Şehrin Haritasını Yükle", type=["png", "jpg", "jpeg", "webp"], key="upload_city_map")
-            if city_map_upload and st.button("Şehir Haritasını Kaydet"):
-                saved_path = saveUploadedImage(city_map_upload)
-                WorldManager.updateEntity(entity.id, map_image_path=saved_path)
-                st.success("Şehir haritası kaydedildi!")
-                st.rerun()
+    if is_dm_mode():
+        with st.expander("⚙️ Şehir Haritası Görselini Değiştir / Pinleri Yönet"):
+            t1, t2 = st.tabs(["🖼️ Şehir Haritası Görseli", "🗑️ Pinleri Sil"])
+            with t1:
+                city_map_upload = st.file_uploader("Bu Şehrin Haritasını Yükle", type=["png", "jpg", "jpeg", "webp"], key="upload_city_map")
+                if city_map_upload and st.button("Şehir Haritasını Kaydet"):
+                    saved_path = saveUploadedImage(city_map_upload)
+                    WorldManager.updateEntity(entity.id, map_image_path=saved_path)
+                    st.success("Şehir haritası kaydedildi!")
+                    st.rerun()
 
-        with t2:
-            cur_city_pins = WorldManager.get_map_pins(map_type="location", location_id=entity.id)
-            if not cur_city_pins:
-                st.caption("Henüz bu şehirde kayıtlı pin yok.")
-            else:
-                for cp, cent in cur_city_pins:
-                    cc1, cc2 = st.columns([4, 1])
-                    cc1.write(f"🍺 **{cent.name}** — (X: %{cp.x}, Y: %{cp.y})")
-                    if cc2.button("Sil", key=f"del_cp_{cp.id}"):
-                        WorldManager.delete_map_pin(cp.id)
-                        st.rerun()
+            with t2:
+                cur_city_pins = WorldManager.get_map_pins(map_type="location", location_id=entity.id)
+                if not cur_city_pins:
+                    st.caption("Henüz bu şehirde kayıtlı pin yok.")
+                else:
+                    for cp, cent in cur_city_pins:
+                        cc1, cc2 = st.columns([4, 1])
+                        cc1.write(f"🍺 **{cent.name}** — (X: %{cp.x}, Y: %{cp.y})")
+                        if cc2.button("Sil", key=f"del_cp_{cp.id}"):
+                            WorldManager.delete_map_pin(cp.id)
+                            st.rerun()

@@ -1,20 +1,22 @@
 import os
 import streamlit as st
 from worldManager import WorldManager
-from utils.constants import TYPE_ICONS, get_upload_dir
+from utils.constants import TYPE_ICONS, get_upload_dir,is_dm_mode
 from components.map import interactiveMap
 
 #BURASI APP İLK AÇILDIĞINDA KARŞIMIZA ÇIKAN DÜNYA HARİTASI OLAN EKRANIN KODLARI.
 
 
 def render_home_view():
+    dm_mode = is_dm_mode()
     """Ana sayfayı (Sayaçlar, Dünya Haritası ve Pin Yönetimi) çizer."""
     st.title("📜 RPG Wiki")
     st.write("Soldan bir sayfa seçebilir ya da dünya haritasından şehirlere gidebilirsiniz.")
 
-    allEntities = WorldManager.get_all_entities()
-    cols = st.columns(len(TYPE_ICONS))
-    for col, (t, icon) in zip(cols, TYPE_ICONS.items()):
+    allEntities = WorldManager.get_all_entities(include_secret=dm_mode)
+    visible_types = {t: icon for t, icon in TYPE_ICONS.items() if dm_mode or t != "monster"}
+    cols = st.columns(len(visible_types))
+    for col, (t, icon) in zip(cols, visible_types.items()):
         col.metric(f"{icon} {t.capitalize()}", sum(1 for e in allEntities if e.entity_type == t))
 
     st.divider()
@@ -24,15 +26,16 @@ def render_home_view():
     WORLD_PENDING = "world_map_pending"
 
     if os.path.exists(world_map_path):
-        world_pins = WorldManager.get_map_pins(map_type="world")
+        world_pins = WorldManager.get_map_pins(map_type="world",include_secret=dm_mode)
         interactiveMap(world_map_path, world_pins, key="world_map")
-        st.caption("💡 İpucu: Harita üzerinde bir yere **tıklayarak** doğrudan o konuma şehir pini yerleştirebilirsiniz.")
+        if dm_mode:
+            st.caption("💡 İpucu: Harita üzerinde bir yere **tıklayarak** doğrudan o konuma şehir pini yerleştirebilirsiniz.")
     else:
         st.info("Henüz bir dünya haritası yüklenmemiş. Aşağıdaki menüden bir harita görseli yükleyin.")
 
     # Haritada bir nokta seçildiyse:
     preview = st.session_state.get(WORLD_PENDING)
-    if preview:
+    if dm_mode and preview:
         clicked_x, clicked_y = preview
         with st.container():
             st.success(f"🎯 Haritada bir nokta seçtiniz! (X: %{clicked_x}, Y: %{clicked_y})")
@@ -101,23 +104,24 @@ def render_home_view():
                     st.rerun()
 
     # Harita Görseli ve Pin Yönetimi Menüsü
-    with st.expander("⚙️ Harita Görselini Değiştir / Pinleri Yönet"):
-        t1, t2 = st.tabs(["🗺️ Harita Görseli", "🗑️ Pinleri Sil"])
-        with t1:
-            new_map = st.file_uploader("Yeni Dünya Haritası Yükle", type=["png", "jpg", "jpeg", "webp"], key="up_world")
-            if new_map and st.button("Haritayı Kaydet"):
-                with open(world_map_path, "wb") as f:
-                    f.write(new_map.getbuffer())
-                st.success("Harita kaydedildi!")
-                st.rerun()
-        with t2:
-            cur_pins = WorldManager.get_map_pins(map_type="world")
-            if not cur_pins:
-                st.caption("Henüz kayıtlı pin yok.")
-            else:
-                for p, ent in cur_pins:
-                    c1, c2 = st.columns([4, 1])
-                    c1.write(f"🏰 **{ent.name}** — (X: %{p.x}, Y: %{p.y})")
-                    if c2.button("Sil", key=f"del_{p.id}"):
-                        WorldManager.delete_map_pin(p.id)
-                        st.rerun()
+    if dm_mode:
+        with st.expander("⚙️ Harita Görselini Değiştir / Pinleri Yönet"):
+            t1, t2 = st.tabs(["🗺️ Harita Görseli", "🗑️ Pinleri Sil"])
+            with t1:
+                new_map = st.file_uploader("Yeni Dünya Haritası Yükle", type=["png", "jpg", "jpeg", "webp"], key="up_world")
+                if new_map and st.button("Haritayı Kaydet"):
+                    with open(world_map_path, "wb") as f:
+                        f.write(new_map.getbuffer())
+                    st.success("Harita kaydedildi!")
+                    st.rerun()
+            with t2:
+                cur_pins = WorldManager.get_map_pins(map_type="world")
+                if not cur_pins:
+                    st.caption("Henüz kayıtlı pin yok.")
+                else:
+                    for p, ent in cur_pins:
+                        c1, c2 = st.columns([4, 1])
+                        c1.write(f"🏰 **{ent.name}** — (X: %{p.x}, Y: %{p.y})")
+                        if c2.button("Sil", key=f"del_{p.id}"):
+                            WorldManager.delete_map_pin(p.id)
+                            st.rerun()

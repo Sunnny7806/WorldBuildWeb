@@ -2,13 +2,16 @@ import json
 import streamlit as st
 from worldManager import WorldManager
 from backlinks import BacklinkManager
-from utils.constants import TYPE_ICONS, goTo
+from utils.constants import TYPE_ICONS, goTo,is_dm_mode
 from utils.media import saveUploadedImage
 
 #BU KOD EVRENE YENİ BİR ENTİTY EKLEME EKRANININ FRONTEND İ VE BACKEND İ.
 
 
 def render_create_view():
+    if not is_dm_mode():
+        st.error("DM e sormadan yeni bir sayfa oluşturamazsın.")
+        return
     """Yeni bir varlık (Karakter, Eşya, Şehir, Tanrı, Mekan, Lonca) oluşturma formunu çizer."""
     st.title("➕ Yeni sayfa")
     entityType = st.selectbox(
