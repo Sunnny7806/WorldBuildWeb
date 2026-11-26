@@ -1,6 +1,9 @@
-from database import SessionLocal, get_db, Entity, Character, Item, Location, EntityLink, God, District, MapPin, Faction, Monster, Lore, EncounterState
-from sqlalchemy.orm import joinedload
+import copy
 import json
+from types import SimpleNamespace
+import streamlit as st
+from database import SessionLocal, get_db, get_active_universe, Entity, Character, Item, Location, EntityLink, God, District, MapPin, Faction, Monster, Lore, EncounterState
+from sqlalchemy.orm import joinedload
 # Tüm alt tabloları tek seferde yüklemek için merkezi ilişki listesi:
 ENTITY_LOAD_OPTIONS = [
     joinedload(Entity.character),
@@ -13,10 +16,100 @@ ENTITY_LOAD_OPTIONS = [
     joinedload(Entity.lore)
 ]
 
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_entity_summaries(universe_name: str) -> list[dict]:
+    """Sol menü, sayaçlar ve link haritası için sade varlık özetlerini önbellekler."""
+    with get_db(universe_name) as db:
+        rows = (
+            db.query(
+                Entity.id,
+                Entity.name,
+                Entity.aliases,
+                Entity.entity_type,
+                Entity.is_secret,
+                Character.is_player,
+            )
+            .outerjoin(Character, Character.entity_id == Entity.id)
+            .all()
+        )
+        return [
+            {
+                "id": r[0],
+                "name": r[1],
+                "aliases": r[2] or "",
+                "entity_type": r[3],
+                "is_secret": bool(r[4]),
+                "is_player": bool(r[5]) if r[5] is not None else False,
+            }
+            for r in rows
+        ]
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_map_pins(universe_name: str, map_type: str, location_id: str | None, include_secret: bool) -> list[tuple[dict, dict]]:
+    """Harita pinlerini düz veri olarak önbellekler."""
+    with get_db(universe_name) as db:
+        query = db.query(MapPin, Entity).join(Entity, Entity.id == MapPin.target_entity_id)
+        if not include_secret:
+            query = query.filter(Entity.is_secret.is_not(True))
+        if map_type == "world":
+            query = query.filter(MapPin.map_type == "world")
+        else:
+            query = query.filter(MapPin.map_type == "location", MapPin.location_id == location_id)
+        return [
+            (
+                {"id": p.id, "x": p.x, "y": p.y, "label": p.label or ""},
+                {"name": e.name, "entity_type": e.entity_type},
+            )
+            for p, e in query.all()
+        ]
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_encounter(universe_name: str) -> dict:
+    """Aktif savaş durumunu önbellekten okur."""
+    with get_db(universe_name) as db:
+        encounter = db.query(EncounterState).filter(EncounterState.id == 1).first()
+        if not encounter:
+            return {"is_active": False, "round": 1, "turn_idx": 0, "combatants": [], "last_roll": ""}
+        combat = json.loads(encounter.combatants_json or "[]")
+        return {
+            "is_active": encounter.is_active,
+            "round": encounter.round_num,
+            "turn_idx": encounter.turn_idx,
+            "combatants": combat,
+            "last_roll": encounter.last_roll or "",
+        }
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_backlinks(universe_name: str, entity_id: str) -> list[dict]:
+    """Bir sayfaya verilen backlink özetlerini önbellekler."""
+    with get_db(universe_name) as db:
+        rows = (
+            db.query(Entity.id, Entity.name, Entity.entity_type, Entity.is_secret)
+            .join(EntityLink, EntityLink.source_id == Entity.id)
+            .filter(EntityLink.target_id == entity_id)
+            .all()
+        )
+        return [
+            {"id": r[0], "name": r[1], "entity_type": r[2], "is_secret": bool(r[3])}
+            for r in rows
+        ]
+
+
 #EKLEME ÇIKARTMA GİBİ BİR ÇOK FONKSİYONU BARINDIRAN BACKEND İN BULUNDUĞU KOD.
 
 
 class WorldManager:
+    @staticmethod
+    def clear_cache():
+        """Yazma işlemlerinden sonra okuma önbelleklerini temizler."""
+        _cached_entity_summaries.clear()
+        _cached_map_pins.clear()
+        _cached_encounter.clear()
+        _cached_backlinks.clear()
     # ==========================================
     # 1. OLUŞTURMA İŞLEMLERİ (CREATE)
     # ==========================================
@@ -47,6 +140,7 @@ class WorldManager:
             db.add(entity)
             db.flush()
             _ = entity.character
+            WorldManager.clear_cache()
             return entity
 
     @staticmethod
@@ -60,6 +154,7 @@ class WorldManager:
             db.add(entity)
             db.flush()
             _ = entity.item
+            WorldManager.clear_cache()
             return entity
 
     @staticmethod
@@ -73,6 +168,7 @@ class WorldManager:
             db.add(entity)
             db.flush()
             _ = entity.location
+            WorldManager.clear_cache()
             return entity
 
     @staticmethod
@@ -86,6 +182,7 @@ class WorldManager:
             db.add(entity)
             db.flush()
             _ = entity.god
+            WorldManager.clear_cache()
             return entity
 
     @staticmethod
@@ -109,6 +206,7 @@ class WorldManager:
                 db.add(EntityLink(source_id=entity.id, target_id=parent_location_id))
 
             _ = entity.district
+            WorldManager.clear_cache()
             return entity
 
     @staticmethod
@@ -120,6 +218,7 @@ class WorldManager:
             db.add(entity)
             db.flush()
             _ = entity.faction
+            WorldManager.clear_cache()
             return entity
 
     @staticmethod
@@ -146,6 +245,7 @@ class WorldManager:
             db.add(entity)
             db.flush()
             _ = entity.monster
+            WorldManager.clear_cache()
             return entity
 
     @staticmethod
@@ -160,11 +260,36 @@ class WorldManager:
             db.add(entity)
             db.flush()
             _ = entity.lore
+            WorldManager.clear_cache()
             return entity
 
     # ==========================================
     # 2. OKUMA VE ARAMA İŞLEMLERİ (READ / SEARCH)
     # ==========================================
+
+    @staticmethod
+    def get_entity_summaries(include_secret: bool = True):
+        """Sol menü, sayaçlar ve link haritası için hafif önbellekli liste döner."""
+        rows = _cached_entity_summaries(get_active_universe())
+        items = [SimpleNamespace(**r) for r in rows]
+        if not include_secret:
+            return [e for e in items if not e.is_secret]
+        return items
+
+    @staticmethod
+    def search_summaries(keyword: str, include_secret: bool = True):
+        """Önbellekli özet listede isim ve takma ad araması yapar."""
+        items = WorldManager.get_entity_summaries(include_secret=include_secret)
+        if not keyword:
+            return items
+        kw = keyword.lower()
+        return [e for e in items if kw in e.name.lower() or kw in e.aliases.lower()]
+
+    @staticmethod
+    def get_backlinks(entity_id: str):
+        """Bir sayfaya bağlantı veren varlıkların özetlerini önbellekten döner."""
+        rows = _cached_backlinks(get_active_universe(), entity_id)
+        return [SimpleNamespace(**r) for r in rows]
 
     @staticmethod
     def get_all_entities(include_secret: bool = True):
@@ -225,6 +350,7 @@ class WorldManager:
                 db.add(entity)
                 created.append(entity)
             db.flush()
+            WorldManager.clear_cache()
             return created
 
     @staticmethod
@@ -237,6 +363,7 @@ class WorldManager:
                 current = char.hp_current if char.hp_current is not None else max_hp
                 char.hp_current = max(0, min(max_hp, current + delta))
                 db.flush()
+                WorldManager.clear_cache()
                 return char.hp_current
             return None
 
@@ -324,6 +451,7 @@ class WorldManager:
 
             db.flush()
             db.refresh(entity)
+            WorldManager.clear_cache()
             return entity
 
     @staticmethod
@@ -342,6 +470,7 @@ class WorldManager:
             ).delete()
 
             db.delete(entity)
+            WorldManager.clear_cache()
             return True
 
     # ==========================================
@@ -362,19 +491,13 @@ class WorldManager:
             db.add(pin)
             db.flush()
             db.refresh(pin)
+            WorldManager.clear_cache()
             return pin
 
     @staticmethod
     def get_map_pins(map_type: str, location_id: str = None, include_secret: bool = True):
-        with get_db() as db:
-            query = db.query(MapPin, Entity).join(Entity, Entity.id == MapPin.target_entity_id)
-            if not include_secret:
-                query = query.filter(Entity.is_secret.is_not(True))
-            if map_type == "world":
-                query = query.filter(MapPin.map_type == "world")
-            else:
-                query = query.filter(MapPin.map_type == "location", MapPin.location_id == location_id)
-            return query.all()
+        raw_pins = _cached_map_pins(get_active_universe(), map_type, location_id, include_secret)
+        return [(SimpleNamespace(**p), SimpleNamespace(**e)) for p, e in raw_pins]
 
     @staticmethod
     def delete_map_pin(pin_id: str):
@@ -382,19 +505,13 @@ class WorldManager:
             pin = db.query(MapPin).filter(MapPin.id == pin_id).first()
             if pin:
                 db.delete(pin)
+                WorldManager.clear_cache()
                 return True
             return False
 
     @staticmethod
     def get_encounter():
-        with get_db() as db:
-            encounter = db.query(EncounterState).filter(EncounterState.id == 1).first()
-            if not encounter:
-                combat_dict = {"is_active": False, "round": 1, "turn_idx": 0, "combatants": [], "last_roll": ""}
-                return combat_dict
-            combat = json.loads(encounter.combatants_json or "[]")
-            combat_dict = {"is_active": encounter.is_active, "round": encounter.round_num, "turn_idx": encounter.turn_idx, "combatants": combat, "last_roll": encounter.last_roll or ""}
-            return combat_dict
+        return copy.deepcopy(_cached_encounter(get_active_universe()))
 
     @staticmethod
     def save_encounter(enc_dict:dict):
@@ -409,6 +526,7 @@ class WorldManager:
             row.last_roll = str(enc_dict.get("last_roll",""))
             row.combatants_json = json.dumps(enc_dict.get("combatants", []))
             db.flush()
+            WorldManager.clear_cache()
             return row   
 
 

@@ -5,6 +5,37 @@ from worldManager import WorldManager
 from utils.constants import goTo, is_dm_mode, is_visible,is_visible
 from utils.dice import get_modifier, format_modifier, roll_d20
 
+
+@st.fragment
+def _render_ability_dice_roller(entity_id: str, stats_dict: dict):
+    """6 yetenek zarı panelini sayfanın kalanını yenilemeden çalıştırır."""
+    last_roll_key = f"last_roll_{entity_id}"
+    st.markdown("##### 🎲 Yetenek Skorları & Kontrol Zarları")
+    roll_box = st.empty()
+
+    stat_cols = st.columns(6)
+    stat_labels = [
+        ("STR", "Kuvvet"), ("DEX", "Çeviklik"), ("CON", "Dayanıklılık"),
+        ("INT", "Zekâ"), ("WIS", "Bilgelik"), ("CHA", "Karizma")
+    ]
+
+    for idx, (abbr, full_name) in enumerate(stat_labels):
+        score = int(stats_dict.get(abbr, 10))
+        mod_val = get_modifier(score)
+        mod_str = format_modifier(score)
+
+        with stat_cols[idx]:
+            st.caption(f"**{abbr}**\n\n**{score}**", text_alignment="center")
+            if st.button(f"🎲{mod_str}", key=f"roll_{abbr}_{entity_id}", width="stretch"):
+                d20, total = roll_d20(bonus=mod_val)
+                crit = " — 💥 KRİTİK BAŞARI (20)!" if d20 == 20 else (" — 💀 KRİTİK BAŞARISIZLIK (1)!" if d20 == 1 else "")
+                st.session_state[last_roll_key] = f"🎲 **{full_name} ({abbr}) Kontrolü:** d20 (**{d20}**) {mod_str} = **{total}**{crit}"
+
+    last_roll = st.session_state.get(last_roll_key)
+    if last_roll:
+        roll_box.info(last_roll)
+
+
 def render_character_sheet(entity):
     """Karakter Kâğıdı (Stat Block), Canlı Can Barı ve Envanter sekmelerini render eder."""
     c = entity.character
@@ -44,14 +75,7 @@ def render_character_sheet(entity):
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # Son Zar Sonucu Bildirimi
-            last_roll_key = f"last_roll_{entity.id}"
-            last_roll = st.session_state.get(last_roll_key)
-            if last_roll:
-                st.info(last_roll)
-
-            # 3. 6 Yetenek Skoru & Zar Butonları
-            st.markdown("##### 🎲 Yetenek Skorları & Kontrol Zarları")
+            # 3. 6 Yetenek Skoru & Zar Butonları (Fragment: sadece zar paneli yenilenir)
             default_stats = {"STR": 10, "DEX": 10, "CON": 10, "INT": 10, "WIS": 10, "CHA": 10}
             raw_stats = getattr(c, 'stats_json', '') or ''
             try:
@@ -59,24 +83,7 @@ def render_character_sheet(entity):
             except Exception:
                 stats_dict = default_stats
 
-            stat_cols = st.columns(6)
-            stat_labels = [
-                ("STR", "Kuvvet"), ("DEX", "Çeviklik"), ("CON", "Dayanıklılık"),
-                ("INT", "Zekâ"), ("WIS", "Bilgelik"), ("CHA", "Karizma")
-            ]
-
-            for idx, (abbr, full_name) in enumerate(stat_labels):
-                score = int(stats_dict.get(abbr, 10))
-                mod_val = get_modifier(score)
-                mod_str = format_modifier(score)
-
-                with stat_cols[idx]:
-                        st.caption(f"**{abbr}**\n\n**{score}**",text_alignment="center")
-                        if st.button(f"🎲{mod_str}", key=f"roll_{abbr}_{entity.id}", use_container_width=True):
-                            d20, total = roll_d20(bonus=mod_val)
-                            crit = " — 💥 KRİTİK BAŞARI (20)!" if d20 == 20 else (" — 💀 KRİTİK BAŞARISIZLIK (1)!" if d20 == 1 else "")
-                            st.session_state[last_roll_key] = f"🎲 **{full_name} ({abbr}) Kontrolü:** d20 (**{d20}**) {mod_str} = **{total}**{crit}"
-                            st.rerun()
+            _render_ability_dice_roller(entity.id, stats_dict)
 
             # 4. Büyüler ve Özel Yetenekler
             spells_content = getattr(c, 'spells_and_features', '')

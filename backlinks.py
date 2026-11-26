@@ -27,6 +27,7 @@ class BacklinkManager:
                         db.add(EntityLink(source_id=entity_id, target_id=target.id))
 
             db.commit()
+            WorldManager.clear_cache()
         except Exception as e:
             db.rollback()
             print(f"Hata! Linkler senkronize edilemedi: {e}")
@@ -36,16 +37,7 @@ class BacklinkManager:
     @staticmethod
     def getBacklinks(entity_id: str):
         """Bu sayfaya link veren sayfaları döndürür."""
-        db = SessionLocal()
-        try:
-            return (
-                db.query(Entity)
-                .join(EntityLink, EntityLink.source_id == Entity.id)
-                .filter(EntityLink.target_id == entity_id)
-                .all()
-            )
-        finally:
-            db.close()
+        return WorldManager.get_backlinks(entity_id)
 
     @staticmethod
     def saveContent(entity_id: str, text: str, auto_link: bool = True):

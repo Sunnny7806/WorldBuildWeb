@@ -1,8 +1,10 @@
 import os
 import streamlit as st
 from worldManager import WorldManager
-from utils.constants import TYPE_ICONS, get_upload_dir,is_dm_mode
+from utils.constants import TYPE_ICONS, get_upload_dir, is_dm_mode
+from utils.media import getWorldMapPath, saveWorldMap
 from components.map import interactiveMap
+
 
 #BURASI APP İLK AÇILDIĞINDA KARŞIMIZA ÇIKAN DÜNYA HARİTASI OLAN EKRANIN KODLARI.
 
@@ -13,7 +15,7 @@ def render_home_view():
     st.title("📜 RPG Wiki")
     st.write("Soldan bir sayfa seçebilir ya da dünya haritasından şehirlere gidebilirsiniz.")
 
-    allEntities = WorldManager.get_all_entities(include_secret=dm_mode)
+    allEntities = WorldManager.get_entity_summaries(include_secret=dm_mode)
     visible_types = {t: icon for t, icon in TYPE_ICONS.items() if dm_mode or t != "monster"}
     cols = st.columns(len(visible_types))
     for col, (t, icon) in zip(cols, visible_types.items()):
@@ -22,7 +24,8 @@ def render_home_view():
     st.divider()
     st.subheader("🗺️ Bilinen Dünya Haritası")
 
-    world_map_path = os.path.join(get_upload_dir(), "world_map.png")
+    upload_dir = get_upload_dir()
+    world_map_path = getWorldMapPath(upload_dir)
     WORLD_PENDING = "world_map_pending"
 
     if os.path.exists(world_map_path):
@@ -110,8 +113,7 @@ def render_home_view():
             with t1:
                 new_map = st.file_uploader("Yeni Dünya Haritası Yükle", type=["png", "jpg", "jpeg", "webp"], key="up_world")
                 if new_map and st.button("Haritayı Kaydet"):
-                    with open(world_map_path, "wb") as f:
-                        f.write(new_map.getbuffer())
+                    saveWorldMap(new_map, upload_dir)
                     st.success("Harita kaydedildi!")
                     st.rerun()
             with t2:

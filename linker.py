@@ -8,7 +8,7 @@ class WikiLinker:
     LINK_PATTERN = re.compile(r'\[([^\[\]|]+)(?:\|[^\[\]]+)?\]')
     @staticmethod
     def buildAliasMap():
-        entities = WorldManager.get_all_entities()
+        entities = WorldManager.get_entity_summaries()
         aliasMap = {}
 
         for e in entities:

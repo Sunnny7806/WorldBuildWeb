@@ -102,7 +102,7 @@ def render_city_map(entity):
             with t1:
                 city_map_upload = st.file_uploader("Bu Şehrin Haritasını Yükle", type=["png", "jpg", "jpeg", "webp"], key="upload_city_map")
                 if city_map_upload and st.button("Şehir Haritasını Kaydet"):
-                    saved_path = saveUploadedImage(city_map_upload)
+                    saved_path = saveUploadedImage(city_map_upload, max_dim=2400)
                     WorldManager.updateEntity(entity.id, map_image_path=saved_path)
                     st.success("Şehir haritası kaydedildi!")
                     st.rerun()

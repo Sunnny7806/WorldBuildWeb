@@ -1,7 +1,6 @@
-import os
 import streamlit as st
 from worldManager import WorldManager
-from utils.constants import TYPE_ICONS, goTo, DM_PIN,is_dm_mode
+from utils.constants import TYPE_ICONS, goTo, DM_PIN, is_dm_mode
 from database import get_active_universe
 
 # SOLDAKİ KARTLARIN VE ARAMA ÇUBUĞUNUN OLDUĞU KISMIN KODLARI.
@@ -73,7 +72,7 @@ def render_sidebar():
         st.divider()
         st.title("📜 RPG Wiki")
         keyword = st.text_input("🔍 Ara", label_visibility="collapsed", placeholder="🔍 Ara...")
-        entities = WorldManager.search(keyword, include_secret=dm_mode) if keyword else WorldManager.get_all_entities(include_secret=dm_mode)
+        entities = WorldManager.search_summaries(keyword, include_secret=dm_mode) if keyword else WorldManager.get_entity_summaries(include_secret=dm_mode)
 
         # Tüm Varlık Türleri İçin Kompakt Kategori Filtresi
         if not dm_mode:
@@ -92,9 +91,9 @@ def render_sidebar():
         )
 
         if selected_filter == "⭐ Oyuncu":
-            entities = [e for e in entities if e.character and getattr(e.character, "is_player", False)]
+            entities = [e for e in entities if e.is_player]
         elif selected_filter == "🎭 NPC":
-            entities = [e for e in entities if e.character and not getattr(e.character, "is_player", False)]
+            entities = [e for e in entities if e.entity_type == "character" and not e.is_player]
         elif selected_filter == "🐉 Canavar":
             entities = [e for e in entities if e.entity_type == "monster"]
         elif selected_filter == "🏰 Şehir":
@@ -113,20 +112,9 @@ def render_sidebar():
         st.caption(f"Toplam: **{len(entities)}** kayıt")
 
         for e in sorted(entities, key=lambda x: x.name):
-            col_icon, col_name = st.columns([1, 4], vertical_alignment="center")
-
-            with col_icon:
-                img_path = getattr(e, 'image_path', '')
-                if img_path and os.path.exists(img_path):
-                    st.image(img_path, width=28)
-                else:
-                    icon = "⭐" if (e.character and getattr(e.character, "is_player", False)) else TYPE_ICONS.get(e.entity_type, "📄")
-                    st.markdown(f"<div style='font-size:18px; text-align:center;'>{icon}</div>", unsafe_allow_html=True)
-
-            with col_name:
-                display_name = f"⭐ {e.name}" if (e.character and getattr(e.character, "is_player", False)) else e.name
-                st.button(display_name, key=f"sb_{e.id}", on_click=goTo, args=(e.name,), use_container_width=True)
+            icon = "⭐" if e.is_player else TYPE_ICONS.get(e.entity_type, "📄")
+            st.button(f"{icon} {e.name}", key=f"sb_{e.id}", on_click=goTo, args=(e.name,), width="stretch")
 
         st.divider()
         if dm_mode:
-            st.button("➕ Yeni sayfa", on_click=goTo, args=("__new__",), use_container_width=True)
+            st.button("➕ Yeni sayfa", on_click=goTo, args=("__new__",), width="stretch")
