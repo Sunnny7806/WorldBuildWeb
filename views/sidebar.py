@@ -68,7 +68,9 @@ def render_sidebar():
                 if st.button("⚔️ Savaş Sırası (İnisiyatif)",type="primary", use_container_width=True):
                     st.query_params["page"] = "__player_combat__"
                     st.rerun()
-
+        if st.button("Session Günlüğü",width="stretch"):
+            st.query_params["page"] = "__sessions__"
+            st.rerun()
         st.divider()
         st.title("📜 RPG Wiki")
         keyword = st.text_input("🔍 Ara", label_visibility="collapsed", placeholder="🔍 Ara...")

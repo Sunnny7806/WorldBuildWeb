@@ -7,6 +7,7 @@ from views.entity_detail import render_entity_detail_view
 from views.create import render_create_view
 from views.dm_screen import render_dm_screen
 from views.player_combat_view import render_player_combat_view
+from views.session import render_session_view
 
 #TÜM FRONTEND KODLARININ UYGULAMADA GÖRÜNMESİNİ SAĞLAYAN THE KOD.
 
@@ -29,6 +30,8 @@ else:
         render_create_view()
     elif page == "__dm_screen__":
         render_dm_screen()
+    elif page == "__sessions__":
+        render_session_view()
     elif page == "__player_combat__":
         render_player_combat_view()
     elif page:

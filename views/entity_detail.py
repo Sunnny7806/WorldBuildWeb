@@ -1,4 +1,5 @@
 import os
+import json
 import streamlit as st
 from worldManager import WorldManager
 from backlinks import BacklinkManager, WikiLinker
@@ -24,9 +25,11 @@ def render_entity_detail_view(name: str):
         st.error("Bu sayfayı daha göremezsin. DM ine neyi merak ettiğini ilettim ona sana anlatır.")
         return 
 
+    vis = WorldManager.get_visibility_flags(entity)
+
     icon = TYPE_ICONS.get(entity.entity_type, "📄")
     st.title(f"{icon} {entity.name}")
-    if entity.aliases:
+    if entity.aliases and(dm_mode or vis["show_details"]):
         st.caption(f"Diğer adları: {entity.aliases}")
 
     left, right = st.columns([2.5, 1])
@@ -38,40 +41,46 @@ def render_entity_detail_view(name: str):
             st.image(img_path, use_container_width=True)
             st.markdown("<hr style='margin: 10px 0;'>", unsafe_allow_html=True)
 
-        st.subheader("Bilgiler")
-        for label, value in getDetails(entity).items():
-            if value:
-                st.markdown(f"**{label}:** {value}")
+        if dm_mode or vis["show_details"]:
+            st.subheader("Bilgiler")
+            for label, value in getDetails(entity).items():
+                if value:
+                    st.markdown(f"**{label}:** {value}")
+        else:
+            st.caption("Henüz bir bilgi bulunmamaktadır.")
 
-        # Eğer bu bir District ise bağlı olduğu Şehir butonu:
-        if entity.district and entity.district.parent_location_id:
-            parent_loc = WorldManager.getEntityById(entity.district.parent_location_id)
-            if parent_loc and is_visible(parent_loc):
-                st.subheader("📍 Bağlı Olduğu Şehir")
-                st.button(f"🏰 {parent_loc.name}", key="btn_parent_loc", on_click=goTo, args=(parent_loc.name,))
+        if dm_mode or vis["show_connections"]:
+            # Eğer bu bir District ise bağlı olduğu Şehir butonu:
+            if entity.district and entity.district.parent_location_id:
+                parent_loc = WorldManager.getEntityById(entity.district.parent_location_id)
+                if parent_loc and is_visible(parent_loc):
+                    st.subheader("📍 Bağlı Olduğu Şehir")
+                    st.button(f"🏰 {parent_loc.name}", key="btn_parent_loc", on_click=goTo, args=(parent_loc.name,))
 
-        # Eğer bu bir Karakter ise ve bir loncaya bağlıysa:
-        if entity.character and entity.character.faction_id:
-            parent_faction = WorldManager.getEntityById(entity.character.faction_id)
-            if parent_faction and is_visible(parent_faction):
-                st.subheader("🛡️ Bağlı Olduğu Lonca")
-                st.button(f"🛡️ {parent_faction.name}", key="btn_char_faction", on_click=goTo, args=(parent_faction.name,), use_container_width=True)
+            # Eğer bu bir Karakter ise ve bir loncaya bağlıysa:
+            if entity.character and entity.character.faction_id:
+                parent_faction = WorldManager.getEntityById(entity.character.faction_id)
+                if parent_faction and is_visible(parent_faction):
+                    st.subheader("🛡️ Bağlı Olduğu Lonca")
+                    st.button(f"🛡️ {parent_faction.name}", key="btn_char_faction", on_click=goTo, args=(parent_faction.name,), use_container_width=True)
 
-        # Eğer bu bir Şehir ise içindeki mekanların butonları:
-        if entity.location:
-            sub_districts = [d for d in WorldManager.getDistrictsOfLocation(entity.id) if is_visible(d)]
-            if sub_districts:
-                st.subheader("🏘️ Bölgeler & Mekanlar")
-                for dist in sub_districts:
-                    st.button(f"🍺 {dist.name}", key=f"dist_{dist.id}", on_click=goTo, args=(dist.name,))
+            # Eğer bu bir Şehir ise içindeki mekanların butonları:
+            if entity.location:
+                sub_districts = [d for d in WorldManager.getDistrictsOfLocation(entity.id) if is_visible(d)]
+                if sub_districts:
+                    st.subheader("🏘️ Bölgeler & Mekanlar")
+                    for dist in sub_districts:
+                        st.button(f"🍺 {dist.name}", key=f"dist_{dist.id}", on_click=goTo, args=(dist.name,))
 
-        st.subheader("Bu sayfaya bağlantılar")
-        raw_backlinks = BacklinkManager.getBacklinks(entity.id)
-        backlinks = [b for b in raw_backlinks if is_visible(b)]
-        if not backlinks:
-            st.caption("Henüz yok.")
-        for b in backlinks:
-            st.button(b.name, key=f"bl_{b.id}", on_click=goTo, args=(b.name,))
+            st.subheader("Bu sayfaya bağlantılar")
+            raw_backlinks = BacklinkManager.getBacklinks(entity.id)
+            backlinks = [b for b in raw_backlinks if is_visible(b)]
+            if not backlinks:
+                st.caption("Henüz yok.")
+            for b in backlinks:
+                st.button(b.name, key=f"bl_{b.id}", on_click=goTo, args=(b.name,))
+        else:
+            st.caption("Bağlantılar henüz keşfedilmedi.")
 
     # SOL SÜTUN: İçerik / Düzenleme ve Modüler Alt Bileşenler
     with left:
@@ -103,8 +112,14 @@ def render_entity_detail_view(name: str):
         else:
             raw_aliases = WikiLinker.buildAliasMap()
             aliases = {k: v for k, v in raw_aliases.items() if is_visible(v)}
-            content = entity.content_md or "_Bu sayfa henüz boş._"
-            st.markdown(renderLinks(content, aliases), unsafe_allow_html=True)
+            if dm_mode or vis["show_content"]:
+                content = entity.content_md or "_Bu sayfa henüz boş._"
+                st.markdown(renderLinks(content, aliases), unsafe_allow_html=True)
+            elif (getattr(entity,"player_content_md", "")or "").strip():
+                content = entity.player_content_md or "_Bu sayfa henüz boş._"
+                st.markdown(renderLinks(content, aliases), unsafe_allow_html=True)
+            else:
+                st.info("Bu varlık hakkında henüz keşfedilmiş bir info yok.")
 
         if dm_mode:
             if getattr(entity, "is_secret",False):
@@ -118,30 +133,52 @@ def render_entity_detail_view(name: str):
                 if st.button("💾 Sırları Kaydet",key=f"btn_save_sec_{entity.id}"):
                     WorldManager.updateEntity(entity.id, is_secret = is_secret_chk, secret_notes = is_secret_text)
                     st.rerun()
- 
-        # 👥 Lonca (Faction) Özel Görünümü & Kadro Jeneratörü
-        if entity.faction:
-            render_faction_view(entity)
+            if not getattr(entity, "is_secret", False):
+                if not any(vis.values()) and not (getattr(entity,"player_content_md", "") or "").strip():
+                    st.caption("Oyuncular şu anda kartın yanlızca ismini ve resmini görebilir.")
+            with st.expander("Oyuncu Görünürlüğü"):
+                f_content = st.checkbox("Tüm içeriği göster.",value=vis["show_content"],key=f"vis_content_{entity.id}")
+                f_details = st.checkbox("Sağ sütundaki özet bilgileri göster",value=vis["show_details"],key=f"vis_details_{entity.id}")
+                f_connection = st.checkbox("Bağlantıları göster.",value=vis["show_connections"],key=f"vis_connections_{entity.id}")
+                f_subs = st.checkbox("Alt Panelleri göster.(Envanter,Harita,Üyeler)",value=vis["show_subcomponents"],key=f"vis_subcomponents_{entity.id}")
+                p_txt_key = f"player_txt_{entity.id}"
+                if p_txt_key not in st.session_state:
+                    st.session_state[p_txt_key] = getattr(entity,"player_content_md") or ""
+                if st.button("DM metnini buraya kopyala",key=f"copy_dm_{entity.id}"):
+                    st.session_state[p_txt_key] = entity.content_md or ""
+                    st.rerun()
+                new_player_md = st.text_area("Oyunculara Özel Metin (Tam içerik kapalıyken buradaki not gözükür.)",key=p_txt_key,height=150)
+                if st.button("💾 Görünürlüğü Kaydet", key=f"but_save_vis_{entity.id}",type="primary"):
+                    visibility = {"show_content":f_content, "show_details":f_details, "show_connections":f_connection, "show_subcomponents":f_subs}
+                    WorldManager.updateEntity(entity.id,player_content_md=new_player_md,player_visibility_json=json.dumps(visibility))
+                    st.rerun()
 
-        # 📊 Karakter Kâğıdı (Character Sheet) & Canlı Envanter
-        if entity.character:
-            render_character_sheet(entity)
 
-        # 📦 Mekan/Dükkan Envanteri (Bulunan / Satılan Eşyalar)
-        if entity.district:
-            render_district_inventory(entity)
 
-        # 🔄 Eşya Sahipliği ve Mekan Yönetimi
-        if entity.item:
-            render_item_transfer(entity)
+        if dm_mode or vis["show_subcomponents"]:
+            # 👥 Lonca (Faction) Özel Görünümü & Kadro Jeneratörü
+            if entity.faction:
+                render_faction_view(entity)
 
-        # 🐉 Canavar Stat Bloğu & Sahneye Sürme
-        if entity.monster:
-            render_monster_stat_block(entity)
+            # 📊 Karakter Kâğıdı (Character Sheet) & Canlı Envanter
+            if entity.character:
+                render_character_sheet(entity)
 
-        # 🗺️ Şehir Haritası (Eğer sayfa bir Şehir ise)
-        if entity.location:
-            render_city_map(entity)
+            # 📦 Mekan/Dükkan Envanteri (Bulunan / Satılan Eşyalar)
+            if entity.district:
+                render_district_inventory(entity)
+
+            # 🔄 Eşya Sahipliği ve Mekan Yönetimi
+            if entity.item:
+                render_item_transfer(entity)
+
+            # 🐉 Canavar Stat Bloğu & Sahneye Sürme
+            if entity.monster:
+                render_monster_stat_block(entity)
+
+            # 🗺️ Şehir Haritası (Eğer sayfa bir Şehir ise)
+            if entity.location:
+                render_city_map(entity)
         if dm_mode:
             with st.expander("🗑️ Sayfayı sil"):
                 st.warning("Bu işlem geri alınamaz.")

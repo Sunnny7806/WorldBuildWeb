@@ -2,7 +2,7 @@ import copy
 import json
 from types import SimpleNamespace
 import streamlit as st
-from database import SessionLocal, get_db, get_active_universe, Entity, Character, Item, Location, EntityLink, God, District, MapPin, Faction, Monster, Lore, EncounterState
+from database import SessionLocal, get_db, get_active_universe, Entity, Character, Item, Location, EntityLink, God, District, MapPin, Faction, Monster, Lore, EncounterState, SessionLog
 from sqlalchemy.orm import joinedload
 # Tüm alt tabloları tek seferde yüklemek için merkezi ilişki listesi:
 ENTITY_LOAD_OPTIONS = [
@@ -15,7 +15,12 @@ ENTITY_LOAD_OPTIONS = [
     joinedload(Entity.monster),
     joinedload(Entity.lore)
 ]
-
+DEFAULT_VISIBILITY_FLAGS = {
+    "show_content": False,
+    "show_details": False,
+    "show_connections": False,
+    "show_subcomponents": False,
+}
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _cached_entity_summaries(universe_name: str) -> list[dict]:
@@ -29,6 +34,8 @@ def _cached_entity_summaries(universe_name: str) -> list[dict]:
                 Entity.entity_type,
                 Entity.is_secret,
                 Character.is_player,
+                Entity.player_content_md,
+                Entity.player_visibility_json,
             )
             .outerjoin(Character, Character.entity_id == Entity.id)
             .all()
@@ -41,10 +48,30 @@ def _cached_entity_summaries(universe_name: str) -> list[dict]:
                 "entity_type": r[3],
                 "is_secret": bool(r[4]),
                 "is_player": bool(r[5]) if r[5] is not None else False,
+                "has_player_info": bool((r[6] or "").strip()) or ('true' in (r[7] or '').lower())
             }
             for r in rows
         ]
-
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_session(universe_name:str, include_unpublished:bool) -> list[dict]:
+    with get_db(universe_name) as db:
+        query = db.query(SessionLog)
+        if not include_unpublished:
+            query = db.query(SessionLog).filter(SessionLog.is_published == True)
+        rows = query.order_by(SessionLog.session_number.asc(),SessionLog.created_at.asc()).all()
+        return [
+            {
+                "id": s.id,
+                "session_number": s.session_number,
+                "title" : s.title,
+                "session_date" : s.session_date or "",
+                "summary_player" : s.summary_player or "",
+                "dm_notes" : s.dm_notes or "",
+                "is_published" : bool(s.is_published),
+                "created_at" : s.created_at.isoformat() if s.created_at else "",
+            }
+            for s in rows
+        ]
 
 @st.cache_data(ttl=300, show_spinner=False)
 def _cached_map_pins(universe_name: str, map_type: str, location_id: str | None, include_secret: bool) -> list[tuple[dict, dict]]:
@@ -110,6 +137,7 @@ class WorldManager:
         _cached_map_pins.clear()
         _cached_encounter.clear()
         _cached_backlinks.clear()
+        _cached_session.clear()
     # ==========================================
     # 1. OLUŞTURMA İŞLEMLERİ (CREATE)
     # ==========================================
@@ -529,5 +557,113 @@ class WorldManager:
             WorldManager.clear_cache()
             return row   
 
+    # ==========================================
+    # 5.  OTURUM GÜNLÜĞÜ (SESSIONS)
+    # ==========================================
 
-        
+    @staticmethod
+    def get_session(include_unpublished: bool = True):
+        parts = _cached_session(get_active_universe(), include_unpublished)
+        return [SimpleNamespace(**r) for r in parts]
+
+    @staticmethod
+    def get_next_session_number() -> int:
+        sessions= WorldManager.get_session(include_unpublished=True)
+        if not sessions:
+            return 1
+        return max(s.session_number for s in sessions) + 1
+
+    @staticmethod
+    def create_session(session_number:int, title:str, session_date:str="", summary_player:str="", dm_notes:str="", is_published:bool=False ,auto_link:bool=True):
+        if auto_link:
+            from linker import WikiLinker
+            summary_player = WikiLinker.autoLink(summary_player or "")
+            dm_notes = WikiLinker.autoLink(dm_notes or "")
+        with get_db() as db:
+            session = SessionLog(session_number=session_number,title=title,session_date=session_date,summary_player=summary_player,dm_notes=dm_notes,is_published=is_published)
+            db.add(session)
+            db.flush()
+            db.refresh(session)
+            WorldManager.clear_cache()
+            return session
+
+    @staticmethod
+    def update_session(session_id:str, auto_link:bool=True, **fields):
+        if auto_link:
+            from linker import WikiLinker
+            for key in ("summary_player", "dm_notes"):
+                if key in fields:
+                    fields[key] = WikiLinker.autoLink(fields[key] or "")
+        with get_db() as db:
+            session = db.query(SessionLog).filter(SessionLog.id == session_id).first()
+            if not session: return None
+            for key, value in fields.items():
+                if hasattr(session,key):
+                    setattr(session,key,value)
+            db.flush()
+            db.refresh(session)
+            WorldManager.clear_cache()
+            return session
+
+    @staticmethod
+    def delete_session(session_id:str) -> bool:
+        with get_db() as db:
+            session = db.query(SessionLog).filter(SessionLog.id == session_id).first()
+            if not session:
+                return False
+            db.delete(session)
+            WorldManager.clear_cache()
+            return True
+
+    # ==========================================
+    # 6. KART İÇİ BİLGİ SİSİ
+    # ==========================================
+
+    @staticmethod
+    def get_visibility_flags(entity) -> dict:
+        flags = dict(DEFAULT_VISIBILITY_FLAGS)
+        raw = getattr(entity, "player_visibility_json", "") or ""
+        if raw:
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed,dict):
+                    for k in flags:
+                        if k in parsed:
+                            flags[k]  = bool(parsed[k])
+            except Exception:pass
+        return flags
+
+    @staticmethod
+    def reveal_entity_to_players(entity_id:str, full:bool = False):
+        flags = dict({k: bool(full) for k in DEFAULT_VISIBILITY_FLAGS})
+        return WorldManager.updateEntity(entity_id,is_secret=False,player_visibility_json = json.dumps(flags))
+
+    @staticmethod
+    def bulk_set_visibility(only_non_pc:bool=True, visible:bool=True):
+        target_json = json.dumps({k: bool(visible) for k in DEFAULT_VISIBILITY_FLAGS})
+        with get_db() as db:
+            query = db.query(Entity).options(*ENTITY_LOAD_OPTIONS).all()
+            for e in query:
+                if e.entity_type == "monster":
+                    continue
+                if (only_non_pc and e.character and getattr(e.character,"is_player",False)):
+                    continue
+                e.player_visibility_json = target_json
+            db.flush()
+            WorldManager.clear_cache()
+
+
+    @staticmethod
+    def analyze_session_mention(text:str) -> dict:
+        from linker import WikiLinker
+        linked_text = WikiLinker.autoLink(text or "")
+        mentioned_names = {n.lower() for n in WikiLinker.extractLinks(linked_text)}
+        secret_list = []
+        locked_list = []
+        summary_list = WorldManager.get_entity_summaries(include_secret=True)
+        for e in summary_list:
+            if (e.entity_type != "monster") and (e.name.lower() in mentioned_names):
+                if e.is_secret: secret_list.append(e)
+                elif not e.has_player_info: locked_list.append(e)
+        return {"secret":secret_list, "locked_details": locked_list}
+

@@ -39,7 +39,9 @@ def _run_migrations(engine):
             "ALTER TABLE characters ADD COLUMN stats_json VARCHAR DEFAULT ''",
             "ALTER TABLE characters ADD COLUMN spells_and_features TEXT DEFAULT ''",
             "ALTER TABLE entities ADD COLUMN secret_notes TEXT DEFAULT ''",
-            "ALTER TABLE entities ADD COLUMN is_secret BOOLEAN DEFAULT 0"
+            "ALTER TABLE entities ADD COLUMN is_secret BOOLEAN DEFAULT 0",
+            "ALTER TABLE entities ADD COLUMN player_content_md TEXT DEFAULT ''",
+            "ALTER TABLE entities ADD COLUMN player_visibility_json VARCHAR DEFAULT ''"
         ]
         for query in migrations:
             try:
@@ -101,6 +103,8 @@ class Entity(Base):
     content_md = Column(String, default="")
     image_path = Column(String, default="")
     secret_notes = Column(String, default="")
+    player_content_md = Column(String, default="")
+    player_visibility_json = Column(String, default="")
     is_secret = Column(Boolean,default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -241,3 +245,16 @@ class EncounterState(Base):
     turn_idx = Column(Integer, default=0)
     combatants_json = Column(String, default="[]")
     last_roll = Column(String, default="")
+
+class SessionLog(Base):
+    __tablename__ = "session_logs"
+
+    id = Column(String, primary_key=True, default=lambda:str(uuid.uuid4()))
+    session_number = Column(Integer, nullable=False,default=1)
+    title = Column(String, nullable=False)
+    session_date = Column(String, default="")
+    summary_player = Column(String, default="")
+    dm_notes = Column(String,default="")
+    is_published = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
